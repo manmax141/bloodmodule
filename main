@@ -12,15 +12,15 @@ local bloodDrops = {}
 
 local function Cast(Origin, Direction)
 
-		local raycastParams = RaycastParams.new()
-		raycastParams.FilterDescendantsInstances = ingore
-		raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-		local Hit = workspace:Raycast(Origin, Direction, raycastParams)
+		local raycastParams = RaycastParams.new() -- create a raycast params
+		raycastParams.FilterDescendantsInstances = ingore -- add ingore table to blacklist so doesnt cast the blacklist things
+		raycastParams.FilterType = Enum.RaycastFilterType.Blacklist -- enable the blacklist
+		local Hit = workspace:Raycast(Origin, Direction, raycastParams) 
 
 		if Hit ~= nil then
-			if Hit.Instance:IsA("BasePart") and Hit.Instance.CanCollide == true then
+			if Hit.Instance:IsA("BasePart") and Hit.Instance.CanCollide == true then -- if hit is a collidable part
 				if Hit.Instance:FindFirstAncestorWhichIsA("Model"):FindFirstChildOfClass("Humanoid")  then print(Hit.Instance.Parent.Name) return end
-				return Hit.Instance, Hit.Position, Hit.Normal
+				return Hit.Instance, Hit.Position, Hit.Normal -- return the hit
 			end
 		end
 	
@@ -29,7 +29,7 @@ end
 
 
 function bloodDrops.addDrops(self)
-	self.Segements = self.Segements or 5
+	self.Segements = self.Segements or 5 -- get the segements u choose in args or start with 5 instead
 		
 	local loops = {
 		
@@ -43,23 +43,23 @@ function bloodDrops.addDrops(self)
 
 		for i = 1, self.Segements do wait()
 
-			local bloodDrop = script:WaitForChild("BloodDrop"):Clone()
-			local HRP = self.Target:WaitForChild("HumanoidRootPart")
-			self.BloodColor = self.BloodColor or Color3.fromRGB(77, 0, 0)
-			bloodDrop.Parent = workspace.Debris
-			game.Debris:AddItem(bloodDrop,4)
-			bloodDrop.CFrame = HRP.CFrame * CFrame.Angles(math.random(-20,20),math.random(-20,20),math.random(-20,20))
-			bloodDrop.Anchored = false
-			bloodDrop.CanCollide = false
-			bloodDrop.Color = self.BloodColor
-			local Velocity = Instance.new("BodyVelocity")
+			local bloodDrop = script:WaitForChild("BloodDrop"):Clone() -- clone the blooddrop part (only found in the real script because its inside it)
+			local HRP = self.Target:WaitForChild("HumanoidRootPart") 
+			self.BloodColor = self.BloodColor or Color3.fromRGB(77, 0, 0) -- set blood color
+			bloodDrop.Parent = workspace -- set it to workspace to show
+			game.Debris:AddItem(bloodDrop,4) -- despawn / remove it after 4 seconds
+			bloodDrop.CFrame = HRP.CFrame * CFrame.Angles(math.random(-20,20),math.random(-20,20),math.random(-20,20)) -- set its angle
+			bloodDrop.Anchored = false -- make it fall
+			bloodDrop.CanCollide = false -- and not collide
+			bloodDrop.Color = self.BloodColor se its color
+			local Velocity = Instance.new("BodyVelocity") -- create its velocity to have a jump animation
 			Velocity.Parent = bloodDrop
 			Velocity.Name = "BloodVelocity"
 			Velocity.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
-			Velocity.Velocity = bloodDrop.CFrame.UpVector * 45
-			game.Debris:AddItem(Velocity, .15)
+			Velocity.Velocity = bloodDrop.CFrame.UpVector * 45 -- create its velocity cframe
+			game.Debris:AddItem(Velocity, .15) -- despawna after 0.15 secs
 
-			self.destroy = function()
+			self.destroy = function() -- destroy function
 				spawn(function()
 
 					wait(self.destroyTime or 3)
@@ -88,17 +88,17 @@ function bloodDrops.addDrops(self)
 					if hit then  		
 				spawn(function()
 					pcall(function()
-						self.hit = hit
-						self.Size = self.Size or 1
+						self.hit = hit -- get the hitted part
+						self.Size = self.Size or 1 -- size of blood floor u choose in args
 				game.Debris:AddItem(bloodDrop,5)
-						local bloodfloorcf = (CFrame.new(RayPosition, RayPosition - Normal)) * CFrame.new(0, 0/2,0) --* CFrame.Angles(math.rad(-90),0,0)
-						local bloodfloor = script:WaitForChild("BloodFloor"):Clone()
+						local bloodfloorcf = (CFrame.new(RayPosition, RayPosition - Normal)) * CFrame.new(0, 0/2,0) -- set bloodfloor cf
+						local bloodfloor = script:WaitForChild("BloodFloor"):Clone() -- clone it (only found in real script because its inside it)
 
-						bloodfloor.Parent = workspace.Debris
-						bloodfloor.CFrame = bloodfloorcf
-						bloodfloor.Color = self.BloodColor
+						bloodfloor.Parent = workspace
+						bloodfloor.CFrame = bloodfloorcf -- set blod cframe
+						bloodfloor.Color = self.BloodColor --s et its color
 
-						local tween = require( game:GetService("ReplicatedStorage"):WaitForChild("Tween") )
+						local tween = require( game:GetService("ReplicatedStorage"):WaitForChild("Tween") ) -- another module scirpt i made it just returns a normal tween service
 
 						tween:Create(bloodfloor,1.5,"Cubic",{Size = Vector3.new(4.158, 4.217, .24) * self.Size})
 						self.destroybloodfloor = function()
@@ -126,7 +126,7 @@ function bloodDrops.addDrops(self)
 
 			self.DestroyTime = destroyTime or 6
 			self.destroy()
-			warn(self.Target.Name.." is bleeding.")
+			warn(self.Target.Name.." is bleeding.") -- to check if everything is working
 
 		end
 
