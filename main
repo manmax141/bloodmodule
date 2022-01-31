@@ -1,5 +1,18 @@
+-- how to use : 
+--- first arg Target u choose the target that must bleed (player/npc etc)
+-- second arg segements i think everyone know this
+-- third arg is the blood drop unit for blood floor to spawn
+
+-- example:
+--local BloodModule = require(game:GetService("ReplicatedStorage").BloodModule)
+	--BloodModule:BloodDrop({
+		--Target = Target,
+		--Segements = 9,
+		--Unit = .35,
+		
+	--})
 local module = {}
-local ts = require(game:GetService("ReplicatedStorage").Tween)
+local ts = require(game:GetService("ReplicatedStorage").Tween) - another module i made
 
 local destroyTime = 6
 local destroyTime2 = 5
@@ -174,50 +187,5 @@ function module:BloodDrop(properties)
 
 end
 
-module.BleedEffect = function(PartToWeld, BleedTime, Size1, Size2, Size3, Size4, Size5, Size6, BloodType, BloodDirection)
-	coroutine.resume(coroutine.create(function()
-		-- Variables
-		local properties2 = {}
-		properties2.BleedTime = BleedTime or 3
-		properties2.Size1 = Size1 or 3
-		properties2.Size2 = Size2 or 5
-		properties2.Size3 = Size1 or 3
-		properties2.Size4 = Size2 or 5
-		properties2.Size5 = Size5 or 1
-		properties2.Size6 = Size6 or 7
-		properties2.BloodDirection = BloodDirection or "Front"
-		
-		properties2.BloodType = BloodType or "Normal"
-	
-			local BloodEffect2 = script:WaitForChild("BloodEffect2"):Clone()
-			BloodEffect2.Parent = workspace.Debris
-			if properties2.BloodDirection == "Front" then
-				BloodEffect2.CFrame = PartToWeld.CFrame * CFrame.new(0,0,-1.25) * CFrame.Angles(math.rad(90),0,0)
-			elseif properties2.BloodDirection == "Left" then
-				BloodEffect2.CFrame = PartToWeld.CFrame * CFrame.new(0,.65,0) * CFrame.Angles(0,0,math.rad(-90))
-		
-			end
-		
-			BloodEffect2:WaitForChild("Blood1").Enabled = true
-			-- change Size
-			BloodEffect2:WaitForChild("Blood1").Width0 = properties2.Size5
-			BloodEffect2:WaitForChild("Blood1").Width1= properties2.Size6
-
-		-- weld blood to the part
-		local Weld = Instance.new("WeldConstraint")
-		Weld.Parent = BloodEffect2
-		Weld.Part0 = BloodEffect2
-		Weld.Part1 = PartToWeld
-
-		-- destroy blood effect
-
-		coroutine.resume(coroutine.create(function()
-			wait(properties2.BleedTime)
-			BloodEffect2:Destroy()
-		end))
-
-		return
-	end))
-end
 
 return module
