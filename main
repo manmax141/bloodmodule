@@ -1,114 +1,222 @@
--- Also im not writing a new code because of some kid hacker that removed everybody's roles
--- idk if possible but if you can check old applications you will find a modeler application aswell if you can put that in regards and give me the modeler roles too
-
 -- // Variables \\
+local RunService = game:GetService("RunService")
+local RepStorage = game:GetService("ReplicatedStorage")
+local Modules = RepStorage:WaitForChild("Modules")
+local Functions = require(Modules:WaitForChild("Functions")) -- this is my module i wont show code for it cuz im lazy to explain it aswell
+local IsClient = RunService.IsClient
 local Players = game:GetService("Players")
-local DS = game:GetService("DataStoreService"):GetDataStore("Cursed Fate")
-local RS =  game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
-local Data = ServerStorage.PlayerData
+local Remotes = RepStorage:WaitForChild("Remotes")
+local SkillRemote = Remotes:WaitForChild("Skill")
+local Lightning = game:GetService("Lighting")
+local Chat = game:GetService("Chat")
 
-local Remotes = RS.Remotes
-local Assets = RS.Assets
-local Outfits = Assets.Outfits
-local StudentCard, ChangeGender = Remotes.StudentCard, Remotes.ChangeGender
+local TS = game:GetService("TweenService")
+local Skill = {
+	Time = 60,
+} -- some table for organization
 
 -- // Functions \\
 
-function GetData(DataName, Player)
-	local success, data = pcall(function()
-		return DS:GetAsync(DataName.."/"..Player.UserId)
-	end)
+function Skill.StartEffect(Player: Player, SkillArgs: {MainPlayer: Player, CurrentPlayer: Player, MouseCF: CFrame})	 -- client sided which is effect only
+	local Character = Player.Character or Player.CharacterAdded:Wait()
+	local FunctioningCharacter = Functions.CreateTarget(Player, Character)
+	local HRP = Character:WaitForChild("HumanoidRootPart")
+	local HUM = Character:WaitForChild("Humanoid")
+	local Arm = Character:WaitForChild("Left Arm")
 
-	return success and data
-end
+	if FunctioningCharacter:GetCancel() or FunctioningCharacter:GetStun() then return end
+	if Character:GetAttribute("InDomain") then return end
 
-function SetData(DataPiece, Player)
-	local success, err = pcall(function()
-		return DS:SetAsync(DataPiece.Name.."/"..Player.UserId, DataPiece.Value)
-	end)
-	if not success then
-		warn(err)
-	end
-end
-
-function CreateWeldConstraint(Part0: BasePart, Part1: BasePart) : ( WeldConstraint? , string? )
-	if not Part0 or not Part1 then return warn("part0 or part1 not found") end
+	local SkillCache = Functions.new(script.Parent.Name, Character)
+	SkillCache:PlayAnimation("DomainOpen") -- basically plays an animation using character.humanoid:loadanimation
 	
-	local WeldConstraint = Instance.new("WeldConstraint")
-	WeldConstraint.Parent = Part0
-	WeldConstraint.Part0 = Part0
-	WeldConstraint.Part1 = Part1
+	FunctioningCharacter:Stun(true, 5, {
+		["AutoRotate"] = {Default = true, Value = false}
+	}) -- adds an attribute to the player 
+	FunctioningCharacter:StunVelocity(true, 5) -- stun player using bodyvelocity
 	
-	return WeldConstraint
-end
-
-function CharacterAdded(Character)
-	local Player = Players:GetPlayerFromCharacter(Character)
-	local PlayerData = Player.PlayerData
+	task.spawn(function()
+		Chat:Chat(Character, "Through-out heaven and earth...")
+		task.wait(1)
+		Chat:Chat(Character, "...I Alone am the honored one.")
+	end) -- contain no yield for some chat messages
 	
-	if PlayerData.Gender.Value == "" then
-		Character:SetAttribute("Stun", true)
-		task.wait(2)
-		StudentCard:FireClient(Player)
-	else
+	if SkillArgs.CurrentPlayer == Player then -- currentplayer is changed (fireallclients player)
+		local B1Effect = SkillCache:CreateEffect("B1", HRP.CFrame, Skill.Time) -- create an effect called b1 stored in repstorage
+		B1Effect.Effect.CanCollide = false
+		B1Effect.Effect.B2.CanCollide = false
 		
-		local Outfit = Outfits[PlayerData.Gender.Value.." Outfit"]:Clone()
-		Outfit.Parent = Character
+		local Connection
+		Connection = RunService.RenderStepped:Connect(function()
+			task.spawn(function()
+				for _, Child in pairs(workspace.Effects:GetChildren()) do -- loop through effects
+					if Child.Name == "B1" and Child ~= B1Effect.Effect then -- remove any b1's
+						Child.Transparency = 1
+						Child.B2.Transparency = 1
+						-- remove them but not completely only make them transparent
+					end
+				end
+			end)
+		end)
 		
-		if not Outfit.PrimaryPart then
-			warn("Outfit primary part not found, some bugs might occur!")
+		local Particle : ParticleEmitter = B1Effect.Effect.FadeInEffect
+		Particle.Enabled = true
+
+		for i = 0, 1, 0.1 do task.wait(.15)
+			Particle.ShapePartial = i -- some round shape effect for the particle
 		end
+
+		Particle.Enabled = false -- make it not show
 		
-		Outfit:PivotTo(Character:GetPivot())
+		SkillCache:PlayAnimation("Domain") -- play an animation easy
 		
-		for _, OutfitPiece in pairs(Outfit:GetChildren()) do
-			if Character:FindFirstChild(OutfitPiece.Name) then
-				CreateWeldConstraint(Character:FindFirstChild(OutfitPiece.Name), OutfitPiece)
+		local Sky = RepStorage.Assets.Gojo.Effects["Space Sky"]:Clone() -- clone it so you dont get it replaced completely
+		Sky.Parent = Lightning -- replacing sky
+
+		local CurrentSky = Lightning:FindFirstChild("Sky")
+		CurrentSky.Parent = game -- storing current sky
+
+		local TransparentParts = {}
+		
+		for _, Part in pairs(workspace.Buildings:GetDescendants()) do -- loop through buildings
+			if Part:IsA("BasePart") and Part.Transparency == 0 then
+				Part.Transparency = 1 -- make them transparent
+				if Part:FindFirstChildOfClass("Texture") then
+					Part:FindFirstChildOfClass("Texture").Transparency = 1 -- same for building textures (to fix bugs)
+					table.insert(TransparentParts, Part:FindFirstChildOfClass("Texture"))
+				end
+				table.insert(TransparentParts, Part)
 			end
 		end
+				
+		local Connection
+		local StartShaking = true
+		Connection = RunService.RenderStepped:Connect(function() -- fast loop (client loop only)
+			if not StartShaking then
+				return Connection:Disconnect() -- disconnect the loop
+			end
+			Functions.ShakeCamera("Bump") -- uses "EZ Camera Shaker"
+		end)
+
+		SkillCache:CreateEffect("Sticks", HRP.CFrame*CFrame.Angles(0,0,0)*CFrame.new(0,0,35), 3.35) -- create some effect
+
+		local PlayerGui = Player.PlayerGui -- get player gui
+		local WhiteScreen = PlayerGui.WhiteScreen.Frame -- a white screen gui
+
+		WhiteScreen.Visible = true -- show it
+		WhiteScreen.BackgroundTransparency = 1 -- make it transparent so we can make it fade in instead of instantly show in
 		
-	end
-end
+		task.wait(3.5)
 
-function PlayerAdded(Player)	
-	local PlayerData = Data:Clone()
-	PlayerData.Parent = Player
-	
-	for _, DataPiece in pairs(PlayerData:GetDescendants()) do
-		if DataPiece:IsA("ValueBase") then
-			
-			local data = GetData(DataPiece.Name, Player)
-			DataPiece.Value = data or DataPiece.Value
-			
-		end
-	end
+		TS:Create(Lightning.Bloom, TweenInfo.new(1,Enum.EasingStyle.Cubic),{Threshold = 0}):Play() -- some good effect for the white screen fade in
+
+		task.wait(.5)
 		
-	Player.CharacterAdded:Connect(CharacterAdded)
-end
+		TS:Create(WhiteScreen,TweenInfo.new(2,Enum.EasingStyle.Sine),{BackgroundTransparency = 0}):Play() -- white screen fade in (the actual ui)
 
-function PlayerRemoving(Player)
-	local PlayerData = Player:WaitForChild("PlayerData")
-	
-	for _, DataPiece in pairs(PlayerData:GetDescendants()) do
-		if DataPiece:IsA("ValueBase") then
-			
-		 	SetData(DataPiece, Player)
+		StartShaking = false -- when we set this to fasle the loop up there disables
+
+		task.wait(3)
+		
+		for _, NPCCharacter in pairs(workspace.NPCs:GetChildren()) do -- looping through npcs
+			if NPCCharacter:GetAttribute("InDomain") ~= SkillArgs.MainPlayer.Name then -- if its in other domain than the player's or not in any
+				local OldParent = NPCCharacter.Parent
+
+				NPCCharacter.Parent = game.ReplicatedStorage -- so they dont show to you (this is client only)
+				task.delay(Skill.Time, function()
+					NPCCharacter.Parent = OldParent
+				end)
+			end
+		end 
+
+		for _, Character in pairs(workspace.Characters:GetChildren()) do -- loop through characters and do the same thing
+			if Character:GetAttribute("InDomain") ~= SkillArgs.MainPlayer.Name then
+
+				local OldParent = Character.Parent
+
+				Character.Parent = game.ReplicatedStorage
+				task.delay(Skill.Time, function()
+					Character.Parent = OldParent
+				end)
+			end
+		end 
+
+		
+		--SkillCache:PlayAnimation("Domain")
+
+		WhiteScreen.Visible = false -- remove whitescreen and make everything back to normal
+		WhiteScreen.BackgroundTransparency = 1
+		Lightning.Bloom.Threshold = 1.5
+
+		task.wait(Skill.Time - (4 + .5 + 3.5 + .66)) -- making time a little acurate here
+
+		for _, Part in pairs(TransparentParts) do
+			Part.Transparency = 0 -- make everything non transparent again
 		end
+
+		Sky:Destroy()
+		CurrentSky.Parent = Lightning -- get cached sky back to normal
 	end
-	
 end
 
-function ChangeGenderEvent(Player, NewGender: string)
-	if not NewGender then return warn("error gender not found!") end
-	if NewGender ~= "Male" and NewGender ~= "Female" then return warn("unknown gender!") end
+function Skill.Start(Player: Player, SkillArgs: {MouseCF: CFrame}) -- serverside hitboxes etc
+	local Character = Player.Character or Player.CharacterAdded:Wait()
+	local FunctioningCharacter = Functions.CreateTarget(Player, Character)
+
+	local HRP = Character:WaitForChild("HumanoidRootPart")
+	local Arm = Character:WaitForChild("Left Arm")
+
+	if FunctioningCharacter:GetStun() or FunctioningCharacter:GetCancel() then return end -- getstun and getcancel is for some attributes so you dont use abilities when ur stunned
+	if Character:GetAttribute("InDomain") then return end -- so u cant use it when ur in domain
 	
-	Player.PlayerData.Gender.Value = NewGender
-	Player:LoadCharacter()
+	FunctioningCharacter:Stun(true, 5) -- stun again but serversided
+	
+	Character:SetAttribute("InDomain", Player.Name) -- setting the player domain to itself
+	task.delay(Skill.Time+5, function()
+		Character:SetAttribute("InDomain", false) -- removing it after sometime
+	end)
+	
+	local SkillCache = Functions.new(script.Parent.Name, Character)
+	task.delay(.15, function()
+		local B1Effect = SkillCache:CreateEffect("B1", HRP.CFrame, Skill.Time) -- i already explained this
+		B1Effect.Effect.Transparency = 0
+		B1Effect.Effect.B2.Transparency = 0
+
+		local Connection
+		Connection = RunService.Heartbeat:Connect(function()
+			if not B1Effect.Effect then
+				return Connection:Disconnect()
+			end
+			TS:Create(B1Effect.Effect,TweenInfo.new(.35,Enum.EasingStyle.Sine),{CFrame = B1Effect.Effect.CFrame * CFrame.fromEulerAnglesXYZ(0,.55,0)}):Play() -- rotation effect
+		end)
+	end)
+	
+	Functions.CreateHitbox("AOE", Character, Vector3.new(88.876, 91.155, 91.155), HRP.CFrame, function(Target, Bl, FunctioningTarget)
+		local HitPlayer = Players:GetPlayerFromCharacter(Target)
+		if HitPlayer then
+			SkillRemote:FireClient({
+				Name = script.Name,
+				Player = HitPlayer,
+				IsSkillSet = true,
+				SetName = script.Parent.Name, -- skil set naem which is "Gojo"
+				Args = {
+					MainPlayer = Player
+				}
+			}) -- this creates the effect for players hit too (cliently)
+		end
+		
+		Target:SetAttribute("InDomain", Player.Name) -- set the player to the same domain aswell
+		task.delay(Skill.Time+5, function()
+			Target:SetAttribute("InDomain", false)
+		end)
+		
+		FunctioningTarget:Stun(true, Skill.Time, {
+			AutoRotate = {Default = true, Value = false},
+			WalkSpeed = {Default = 16, Value = 0},
+			JumpPower = {Default = 50, Value = 0}
+		}) -- stunning the target for the whole time
+	end)
+
 end
 
--- // Events \\
-
-ChangeGender.OnServerEvent:Connect(ChangeGenderEvent)
-Players.PlayerAdded:Connect(PlayerAdded)
-Players.PlayerRemoving:Connect(PlayerRemoving)
+return Skill -- return the module table so it can be used
