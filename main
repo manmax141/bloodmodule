@@ -1,222 +1,458 @@
+local Functions = {}
+Functions.__index = Functions -- for oop
+
 -- // Variables \\
-local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local IsPlayer = Players.GetPlayerFromCharacter
 local RepStorage = game:GetService("ReplicatedStorage")
 local Modules = RepStorage:WaitForChild("Modules")
-local Functions = require(Modules:WaitForChild("Functions")) -- this is my module i wont show code for it cuz im lazy to explain it aswell
+local Region = require(Modules:WaitForChild("RotatedRegion3"))
+local Assets = RepStorage:WaitForChild("Assets")
+local RunService = game:GetService("RunService")
 local IsClient = RunService.IsClient
-local Players = game:GetService("Players")
-local Remotes = RepStorage:WaitForChild("Remotes")
-local SkillRemote = Remotes:WaitForChild("Skill")
-local Lightning = game:GetService("Lighting")
-local Chat = game:GetService("Chat")
-
-local TS = game:GetService("TweenService")
-local Skill = {
-	Time = 60,
-} -- some table for organization
+local CameraShaker = require(Modules:WaitForChild("CameraShaker"))
+local TweenService = game:GetService("TweenService")
+local Indicate = require(Modules:WaitForChild("DamageIndicator"))
+local Rand = Random.new()
+local NextNum = Rand.NextNumber
+local ContentProvider = game:GetService("ContentProvider")
+local ParryScreenEffect = RepStorage:WaitForChild("Remotes"):WaitForChild("ParryScreenEffect")
+local PendingStuns = {}
 
 -- // Functions \\
-
-function Skill.StartEffect(Player: Player, SkillArgs: {MainPlayer: Player, CurrentPlayer: Player, MouseCF: CFrame})	 -- client sided which is effect only
-	local Character = Player.Character or Player.CharacterAdded:Wait()
-	local FunctioningCharacter = Functions.CreateTarget(Player, Character)
-	local HRP = Character:WaitForChild("HumanoidRootPart")
-	local HUM = Character:WaitForChild("Humanoid")
-	local Arm = Character:WaitForChild("Left Arm")
-
-	if FunctioningCharacter:GetCancel() or FunctioningCharacter:GetStun() then return end
-	if Character:GetAttribute("InDomain") then return end
-
-	local SkillCache = Functions.new(script.Parent.Name, Character)
-	SkillCache:PlayAnimation("DomainOpen") -- basically plays an animation using character.humanoid:loadanimation
+function Functions.CreateTarget(Character, Target: Model)
+	assert(Character, "Character not found!")
+	if Character:IsA("Player") then
+		Character = Character.Character -- if its a player then get the character from player
+	end
 	
-	FunctioningCharacter:Stun(true, 5, {
-		["AutoRotate"] = {Default = true, Value = false}
-	}) -- adds an attribute to the player 
-	FunctioningCharacter:StunVelocity(true, 5) -- stun player using bodyvelocity
-	
-	task.spawn(function()
-		Chat:Chat(Character, "Through-out heaven and earth...")
-		task.wait(1)
-		Chat:Chat(Character, "...I Alone am the honored one.")
-	end) -- contain no yield for some chat messages
-	
-	if SkillArgs.CurrentPlayer == Player then -- currentplayer is changed (fireallclients player)
-		local B1Effect = SkillCache:CreateEffect("B1", HRP.CFrame, Skill.Time) -- create an effect called b1 stored in repstorage
-		B1Effect.Effect.CanCollide = false
-		B1Effect.Effect.B2.CanCollide = false
-		
-		local Connection
-		Connection = RunService.RenderStepped:Connect(function()
-			task.spawn(function()
-				for _, Child in pairs(workspace.Effects:GetChildren()) do -- loop through effects
-					if Child.Name == "B1" and Child ~= B1Effect.Effect then -- remove any b1's
-						Child.Transparency = 1
-						Child.B2.Transparency = 1
-						-- remove them but not completely only make them transparent
-					end
-				end
+	local DamageFunctionTable = {
+		Damage = function(DamageNumber: number)  
+			return warn("tried to damage target but couldnt")
+		end
+	}
+
+	assert(Target, "Target not found!")
+	assert(Target:FindFirstChild("HumanoidRootPart"), "Target must have a RootPart!")
+	assert(Target:FindFirstChildOfClass("Humanoid"), "Target must have a humanoid!")
+
+	return setmetatable({Character = Character, Target = Target}, Functions) -- for oop
+end
+
+function Functions:Knockback(Power: number, DelayTime: number, Direction: Vector3?, NoOwnership: boolean?)
+	assert(typeof(Power) == "number", "Power must be a number!")
+	Functions.RemoveVelocity(self)
+
+	local Character = self.Character
+	local Target = self.Target
+
+	if Target:FindFirstChild("Blocking") then 
+		Power /= 3 -- make velocity weaker when he's blocking
+		warn("Power weakened because target is blocking!")
+	end
+
+	local HRP = Character:WaitForChild("HumanoidRootPart") -- player base part (hrp)
+
+	local TargetHRP = Target:FindFirstChild("HumanoidRootPart") -- for target
+	assert(TargetHRP.Anchored == false, "Target RootPart Is Stunned! (RootPart Anchored)") -- if hrp anchored then error
+
+	if not NoOwnership and not IsClient(RunService) then
+		pcall(function() -- to avoid some errors
+			TargetHRP:SetNetworkOwner(IsPlayer(Players, Character)) -- is player is Players:GetPlayerFromCharacter
+			-- here we are changing hrp networkowner to player so things go smooth
+			task.delay(DelayTime, function()
+				TargetHRP:SetNetworkOwner(IsPlayer(Players, Target)) -- then setting it back
 			end)
 		end)
-		
-		local Particle : ParticleEmitter = B1Effect.Effect.FadeInEffect
-		Particle.Enabled = true
+	end
 
-		for i = 0, 1, 0.1 do task.wait(.15)
-			Particle.ShapePartial = i -- some round shape effect for the particle
+	for _,v in pairs(TargetHRP:GetChildren()) do
+		if v:IsA("BodyVelocity") then 
+			v:Destroy() -- remove any bodyvelocity in targethrp
 		end
+	end
 
-		Particle.Enabled = false -- make it not show
-		
-		SkillCache:PlayAnimation("Domain") -- play an animation easy
-		
-		local Sky = RepStorage.Assets.Gojo.Effects["Space Sky"]:Clone() -- clone it so you dont get it replaced completely
-		Sky.Parent = Lightning -- replacing sky
+	local BV = Instance.new("BodyVelocity")
+	BV.Parent = TargetHRP
+	BV.MaxForce = Vector3.new(1,1,1) * math.huge
+	
+	if typeof(Direction) == "Vector3" then
+		BV.Velocity = Direction -- set it to direction easily
+	elseif typeof(Direction) == "CFrame" then
+		BV.Velocity = Direction.LookVector * Power -- if its a cframe get its vector and multiply by power
+	else
+		BV.Velocity = HRP.CFrame.LookVector * Power -- if its not there then create our own direction
+	end
+	
+	game.Debris:AddItem(BV, DelayTime)	
 
-		local CurrentSky = Lightning:FindFirstChild("Sky")
-		CurrentSky.Parent = game -- storing current sky
+	return setmetatable({CurrentBV = BV}, Functions)
+end
 
-		local TransparentParts = {}
-		
-		for _, Part in pairs(workspace.Buildings:GetDescendants()) do -- loop through buildings
-			if Part:IsA("BasePart") and Part.Transparency == 0 then
-				Part.Transparency = 1 -- make them transparent
-				if Part:FindFirstChildOfClass("Texture") then
-					Part:FindFirstChildOfClass("Texture").Transparency = 1 -- same for building textures (to fix bugs)
-					table.insert(TransparentParts, Part:FindFirstChildOfClass("Texture"))
-				end
-				table.insert(TransparentParts, Part)
-			end
+function Functions:RemoveVelocity()
+	assert(self.Target, "Target not found!")
+	local Target = self.Target
+	local TargetHRP = Target:WaitForChild("HumanoidRootPart")
+
+	for _,v in pairs(TargetHRP:GetChildren()) do
+		if v:IsA("BodyVelocity") then
+			v:Destroy() -- removes any bodyvelocity in targethrp
 		end
-				
-		local Connection
-		local StartShaking = true
-		Connection = RunService.RenderStepped:Connect(function() -- fast loop (client loop only)
-			if not StartShaking then
-				return Connection:Disconnect() -- disconnect the loop
-			end
-			Functions.ShakeCamera("Bump") -- uses "EZ Camera Shaker"
-		end)
-
-		SkillCache:CreateEffect("Sticks", HRP.CFrame*CFrame.Angles(0,0,0)*CFrame.new(0,0,35), 3.35) -- create some effect
-
-		local PlayerGui = Player.PlayerGui -- get player gui
-		local WhiteScreen = PlayerGui.WhiteScreen.Frame -- a white screen gui
-
-		WhiteScreen.Visible = true -- show it
-		WhiteScreen.BackgroundTransparency = 1 -- make it transparent so we can make it fade in instead of instantly show in
-		
-		task.wait(3.5)
-
-		TS:Create(Lightning.Bloom, TweenInfo.new(1,Enum.EasingStyle.Cubic),{Threshold = 0}):Play() -- some good effect for the white screen fade in
-
-		task.wait(.5)
-		
-		TS:Create(WhiteScreen,TweenInfo.new(2,Enum.EasingStyle.Sine),{BackgroundTransparency = 0}):Play() -- white screen fade in (the actual ui)
-
-		StartShaking = false -- when we set this to fasle the loop up there disables
-
-		task.wait(3)
-		
-		for _, NPCCharacter in pairs(workspace.NPCs:GetChildren()) do -- looping through npcs
-			if NPCCharacter:GetAttribute("InDomain") ~= SkillArgs.MainPlayer.Name then -- if its in other domain than the player's or not in any
-				local OldParent = NPCCharacter.Parent
-
-				NPCCharacter.Parent = game.ReplicatedStorage -- so they dont show to you (this is client only)
-				task.delay(Skill.Time, function()
-					NPCCharacter.Parent = OldParent
-				end)
-			end
-		end 
-
-		for _, Character in pairs(workspace.Characters:GetChildren()) do -- loop through characters and do the same thing
-			if Character:GetAttribute("InDomain") ~= SkillArgs.MainPlayer.Name then
-
-				local OldParent = Character.Parent
-
-				Character.Parent = game.ReplicatedStorage
-				task.delay(Skill.Time, function()
-					Character.Parent = OldParent
-				end)
-			end
-		end 
-
-		
-		--SkillCache:PlayAnimation("Domain")
-
-		WhiteScreen.Visible = false -- remove whitescreen and make everything back to normal
-		WhiteScreen.BackgroundTransparency = 1
-		Lightning.Bloom.Threshold = 1.5
-
-		task.wait(Skill.Time - (4 + .5 + 3.5 + .66)) -- making time a little acurate here
-
-		for _, Part in pairs(TransparentParts) do
-			Part.Transparency = 0 -- make everything non transparent again
-		end
-
-		Sky:Destroy()
-		CurrentSky.Parent = Lightning -- get cached sky back to normal
 	end
 end
 
-function Skill.Start(Player: Player, SkillArgs: {MouseCF: CFrame}) -- serverside hitboxes etc
-	local Character = Player.Character or Player.CharacterAdded:Wait()
-	local FunctioningCharacter = Functions.CreateTarget(Player, Character)
+function Functions:StunVelocity(State: boolean, DelayTime: number?)
+	if State then
+		Functions.Knockback(self, 0, DelayTime or math.huge, Vector3.new(0,0,0)) -- using the old function we made
+	else
+		Functions.RemoveVelocity(self) -- removing it from the function earlier
+	end
+end
+
+function Functions:ChangeDirection(NewDirection)
+	assert(NewDirection, "A new direction must be specified!")
+
+	if self.CurrentBV then
+		self.CurrentBV.Velocity = NewDirection -- setting velocity to a new direction/
+	elseif self.CurrentBG then
+		self.CurrentBG.CFrame = NewDirection -- same here but for bg which is orientation
+	else
+		error("No velocity provided!")
+	end
+end
+
+function Functions:Rotate(Power: number, DelayTime: number, Direction: CFrame?)
+	assert(typeof(Power) == "number", "Power must be a number!")
+
+	local Character = self.Character
+	local Target = self.Target
 
 	local HRP = Character:WaitForChild("HumanoidRootPart")
-	local Arm = Character:WaitForChild("Left Arm")
 
-	if FunctioningCharacter:GetStun() or FunctioningCharacter:GetCancel() then return end -- getstun and getcancel is for some attributes so you dont use abilities when ur stunned
-	if Character:GetAttribute("InDomain") then return end -- so u cant use it when ur in domain
-	
-	FunctioningCharacter:Stun(true, 5) -- stun again but serversided
-	
-	Character:SetAttribute("InDomain", Player.Name) -- setting the player domain to itself
-	task.delay(Skill.Time+5, function()
-		Character:SetAttribute("InDomain", false) -- removing it after sometime
-	end)
-	
-	local SkillCache = Functions.new(script.Parent.Name, Character)
-	task.delay(.15, function()
-		local B1Effect = SkillCache:CreateEffect("B1", HRP.CFrame, Skill.Time) -- i already explained this
-		B1Effect.Effect.Transparency = 0
-		B1Effect.Effect.B2.Transparency = 0
+	local TargetHRP = Target:FindFirstChild("HumanoidRootPart")
+	assert(TargetHRP.Anchored == false, "Target RootPart Is Stunned! (RootPart Anchored)")
 
-		local Connection
-		Connection = RunService.Heartbeat:Connect(function()
-			if not B1Effect.Effect then
-				return Connection:Disconnect()
+	if not IsClient(RunService) then
+		-- explained this earlier
+		TargetHRP:SetNetworkOwner(IsPlayer(Players, Character))
+		delay(DelayTime, function()
+			TargetHRP:SetNetworkOwner(IsPlayer(Players, Target))
+		end)
+	end
+
+	local BG = Instance.new("BodyGyro") -- adding a body gyro so we can make the player rotate and change direction using the function above
+	BG.Parent = TargetHRP
+	BG.MaxTorque = Vector3.new(1,1,1) * math.huge -- 1 * math.huge = math.huge for the 3 of them
+	BG.CFrame = HRP.CFrame
+	BG.P = Power
+
+	game.Debris:AddItem(BG, DelayTime)	
+
+	return setmetatable({CurrentBG = BG}, Functions)
+end
+
+function Functions:Stun(State: boolean, DelayTime: number?, Args: {}, DontPend: boolean?)
+	if State and not DontPend and self.Target:FindFirstChild("Blocking") then -- dont stun if you are blocking
+		return warn("Stun blocked because target is blocking!")
+	end
+	local HUM = self.Target:FindFirstChild("Humanoid")
+	if not State then
+		if Args then
+
+			for Arg, ArgValue in pairs(Args) do
+				if HUM[Arg] ~= nil then -- if its a valid argument
+					HUM[Arg] = ArgValue.Default -- add it
+				else
+					warn("Property: "..Arg.." not found in humanoid, couldn't change!")
+				end
 			end
-			TS:Create(B1Effect.Effect,TweenInfo.new(.35,Enum.EasingStyle.Sine),{CFrame = B1Effect.Effect.CFrame * CFrame.fromEulerAnglesXYZ(0,.55,0)}):Play() -- rotation effect
-		end)
-	end)
-	
-	Functions.CreateHitbox("AOE", Character, Vector3.new(88.876, 91.155, 91.155), HRP.CFrame, function(Target, Bl, FunctioningTarget)
-		local HitPlayer = Players:GetPlayerFromCharacter(Target)
-		if HitPlayer then
-			SkillRemote:FireClient({
-				Name = script.Name,
-				Player = HitPlayer,
-				IsSkillSet = true,
-				SetName = script.Parent.Name, -- skil set naem which is "Gojo"
-				Args = {
-					MainPlayer = Player
-				}
-			}) -- this creates the effect for players hit too (cliently)
+
 		end
-		
-		Target:SetAttribute("InDomain", Player.Name) -- set the player to the same domain aswell
-		task.delay(Skill.Time+5, function()
-			Target:SetAttribute("InDomain", false)
+	else
+		if Args then
+			if HUM then
+				for Arg, ArgValue in pairs(Args) do
+					if HUM[Arg] ~= nil then
+						HUM[Arg] = ArgValue.Value
+					else
+						warn("Property: "..Arg.." not found in humanoid, couldn't change!")
+					end
+				end
+			else
+				warn("No humanoid found couldn't stun with args!")
+			end
+		end
+	end
+
+	if State and DelayTime then
+		if self.Target:GetAttribute("Stun", true) and State == true and not DontPend then
+			table.insert(PendingStuns, self.Target) -- if the player is already stunned then it will add it to pending
+		end
+
+		delay(DelayTime, function()
+			if table.find(PendingStuns, self.Target) then
+				warn("Pending stun found!, couldn't unstun")
+
+				for Index, Target in pairs(PendingStuns) do
+					if Target == self.Target then
+						table.remove(PendingStuns, Index) -- remove a target from pendingstuns
+						break -- break it because we only want to remove 1
+					end
+				end
+
+
+			else
+				self.Target:SetAttribute("Stun", false) -- change the stun attribute back to false (unstun)
+
+				if Args then
+
+					for Arg, ArgValue in pairs(Args) do
+						if HUM[Arg] ~= nil then
+							HUM[Arg] = ArgValue.Default
+						else
+							warn("Property: "..Arg.." not found in humanoid, couldn't change!")
+						end
+					end
+
+				end
+
+			end
 		end)
-		
-		FunctioningTarget:Stun(true, Skill.Time, {
-			AutoRotate = {Default = true, Value = false},
-			WalkSpeed = {Default = 16, Value = 0},
-			JumpPower = {Default = 50, Value = 0}
-		}) -- stunning the target for the whole time
-	end)
+	end
+
+	self.Target:SetAttribute("Stun", State) -- stun or unstun depends on state
+end
+
+function Functions:GetStun()
+	return self.Target:GetAttribute("Stun") -- get if player is stunned
+end
+
+function Functions:Cancel(State: boolean, DelayTime: number?)
+	self.Target:SetAttribute("Cancel", State) -- this is like stun but cancel in mid of ability
+	if State then
+		delay(DelayTime or 1, function()
+			-- all this explained
+			self.Target:SetAttribute("Cancel", false)
+		end)
+	end
+end
+
+function Functions:Ragdoll(State: boolean, DelayTime: number?, NoHumanoidStun: boolean?)
+	assert(self.Target, "Target not found!")
+	if self.Target:FindFirstChild("RagdollTrigger") then
+		self.Target.RagdollTrigger.Value = true -- i use a ragdoll module which lets me change this value to ragdoll on or off
+
+		if State then
+			if not NoHumanoidStun then
+				local HUM = self.Target:WaitForChild("Humanoid")
+				HUM.WalkSpeed = 0
+				HUM.JumpPower = 0
+				-- stunning player so he cant move while he's ragdolled
+			end
+			delay(DelayTime, function()
+				self.Target.RagdollTrigger.Value = false -- unragdolling
+				if not NoHumanoidStun then
+					local HUM = self.Target:WaitForChild("Humanoid")
+					HUM.WalkSpeed = 16
+					HUM.JumpPower = 50
+					-- unstunning player so he can move
+				end
+			end)
+		end
+	else
+		warn("Ragdoll trigger not found!, couldnt ragdoll ("..self.Target.Name..")")
+	end
+end
+
+function Functions:GetCancel()
+	return self.Target:GetAttribute("Cancel") -- same as getstun but for cancel
+end
+
+function Functions:IFrame(State: boolean, DelayTime: number?)
+	self.Target:SetAttribute("IFRAME", State) -- something like cancel and stun but makes u immune
+	if State then
+		delay(DelayTime or 1, function()
+			self.Target:SetAttribute("IFRAME", false) -- sets it false after sometime
+		end)
+	end
+end
+
+function Functions:GetIFrame()
+	return self.Target:GetAttribute("IFRAME") -- getting the iframe like cancel and stun
+end
+
+function Functions:HitEffect(NoHighlight: boolean?)
+	assert(self.Target, "Target not found!") -- if not target then error
+
+	if not self.Target:FindFirstChild("HitHighlight2") then -- hithighlight2 is basically a cooldown for hit effects
+		local HitFX = Assets:WaitForChild("HitFX")
+		local TargetHRP = self.Target:WaitForChild("HumanoidRootPart")
+
+		if self.Target:FindFirstChild("Blocking") then
+			local BlockHitFX = Assets:WaitForChild("BlockHitFX") -- block hit effect
+			local Attachment = BlockHitFX:WaitForChild("Attachment"):Clone()
+			Attachment.Parent = TargetHRP -- adding it to player
+
+			for _, ParticleEmitter in pairs(Attachment:GetChildren()) do
+				ParticleEmitter:Emit() -- emitting all particles there
+			end
+
+			game.Debris:AddItem(Attachment, 2)
+		else
+			local ParticleA = HitFX:WaitForChild("ParticleA"):Clone() -- particlea is an attachment we do the same like in block hit fx
+			ParticleA.Parent = TargetHRP
+
+			for _, ParticleEmitter in pairs(ParticleA:GetChildren()) do
+				ParticleEmitter:Emit() -- emitting all particles again
+			end
+
+			local Particle = HitFX:WaitForChild("Shockwave"):Clone() -- a particle to complete hit effect
+			Particle.Parent = TargetHRP
+			Particle:Emit()
+
+			game.Debris:AddItem(Particle, 2) -- remove it after 2 seconds
+			game.Debris:AddItem(ParticleA, 2) -- same here
+		end
+
+		local Highlight2 = Instance.new("BoolValue") -- the cooldown
+		Highlight2.Name = "HitHighlight2"
+		Highlight2.Parent = self.Target
+		game.Debris:AddItem(Highlight2,.2)
+
+		if not NoHighlight then -- if nohighlihgt is true then it wont add highlight effect
+			local Highlight = Instance.new("Highlight") -- effect
+			Highlight.Name = "HitHighlight"
+			Highlight.Parent = self.Target
+			Highlight.OutlineTransparency = 1 -- make outline transparent
+			Highlight.FillTransparency = 0 -- make it visible
+
+			delay(.15, function() -- wait .15 secs without yield
+				TweenService:Create(Highlight,TweenInfo.new(.25,Enum.EasingStyle.Cubic),{FillTransparency = 1}):Play() -- a normal tween script to make it transparent
+				game.Debris:AddItem(Highlight,.25) -- remove it after .25 secs
+			end)
+		end
+	end
+end
+
+function Functions.new(SkillName: string, Character: Model)
+	assert(Assets:FindFirstChild(SkillName), "Skill Assets not found")
+
+	local Skill = {
+		Effects = Assets:FindFirstChild(SkillName):FindFirstChild("Effects"), -- some organization 
+		Anims = Assets:FindFirstChild(SkillName):FindFirstChild("Animations"), -- same here
+		Character = Character
+	}
+
+	return setmetatable(Skill, Functions) -- return it so we can access quickly things
+end
+
+
+function Functions:PlayAnimation(AnimationName: string, Yield: boolean?)
+	assert(self.Anims:FindFirstChild(AnimationName), "Animation not found!")
+
+	local hum = self.Character:WaitForChild("Humanoid") -- get character humanoid
+	local Anim = hum:LoadAnimation(self.Anims:FindFirstChild(AnimationName)) -- load the animation
+	ContentProvider:PreloadAsync({Anim}) -- preload it first so it doesnt bug
+
+	Anim:Play() -- play it 
+
+	if Yield then
+		task.wait(Anim.Length/Anim.Speed) -- wait if yield is true
+	end
+
+	return Anim
+end
+
+
+function Functions:GetAnimation(AnimationName: string)
+	assert(self.Anims:FindFirstChild(AnimationName), "Animation not found!")
+
+	local hum = self.Character:WaitForChild("Humanoid")
+	local Anim = hum:LoadAnimation(self.Anims:FindFirstChild(AnimationName)) -- loads the animation
+	ContentProvider:PreloadAsync({Anim}) -- preloads it
+	
+	-- difference between this function and play animation is this doesnt play it
+	
+	return Anim
+end
+
+function Functions.CreateHitbox(HitboxType: string, Character: Model?, Size: Vector3, CF: CFrame, Callback, Args: { BlockDamage : number?, IsBlockBreaker: boolean?, Unparryable: boolean?}?)
+	assert(HitboxType, "Hitbox type is invalid")
+	assert(Character, "Character is nil")
+
+	if HitboxType:lower() == "aoe" then -- only current hitbox type here
+		local HitWhitelist = {}
+		local CurrentPartsInRegion = Region.new(CF, Size):FindPartsInRegion3WithIgnoreList({Character}, math.huge) -- rotated region 3 module arguments are obvious
+
+		for _, Target in pairs(CurrentPartsInRegion) do
+			Target = Target:FindFirstAncestorWhichIsA("Model")
+
+			if Target and not Target:GetAttribute("IFRAME") and Target:FindFirstChild("HumanoidRootPart") and Target:FindFirstChildOfClass("Humanoid") and not HitWhitelist[Target] then -- hitwhitelist for hit cooldown and aoe
+				local FunctioningTarget = Functions.CreateTarget(Character, Target) -- a function upthere
+				local NoError = false
+
+				if Args then
+					local Blocking = Target:FindFirstChild("Blocking") -- get blocking
+					local ParryWindow = Target:FindFirstChild("ParryWindow") -- get if he's parrying
+
+					if not Args.Unparryable then -- args.unparryable if true then like it says this if statement wont work and the ability will be unparryable
+						if ParryWindow then -- if the target is parrying
+							ParryWindow:Destroy()
+							local FunctioningCharacter = Functions.CreateTarget(Character, Character)
+							local SkillCache = Functions.new("Block", Character)
+
+							FunctioningCharacter:Stun(true, .35, {
+								["JumpPower"] = {Default = 50, Value = 0},
+								["WalkSpeed"] = {Default = 16, Value = 0}
+							}, true)
+
+							SkillCache:PlayAnimation("ParriedAnimation")
+							--if IsPlayer(Players, self.Character) then
+							--ParryScreenEffect:FireClient(IsPlayer(Players, self.Character))
+							--end
+							NoError = true
+						end
+					end
+
+					if Blocking then -- if he's blocking
+						local SkillCache = Functions.new("Block", Target)
+
+						if Args.IsBlockBreaker then -- block break
+							Blocking.Value = 0
+						else
+							Blocking.Value -= Args.BlockDamage or 5 -- damage the block
+						end
+
+						if Blocking.Value <= 0 then -- if its already 0 then destroy it
+							Blocking:Destroy()
+							FunctioningTarget:Stun(true, 2, {
+								["JumpPower"] = {Default = 50, Value = 0},
+								["WalkSpeed"] = {Default = 16, Value = 0}
+							}) -- block break stun
+
+							SkillCache:PlayAnimation("BlockBreakAnimation") -- play the block break animation
+							SkillCache:StopAnimation("BlockAnimation")-- remove blocking animation
+
+							local BlockBreakEffect = SkillCache:CreateEffect("BlockBreakEffect", Target.HumanoidRootPart.CFrame, .35) -- creating the effect
+							BlockBreakEffect:Weld(Target.HumanoidRootPart) -- wielding it to the player
+							BlockBreakEffect:EnableParticles() -- this enables all particles inside the effect
+						else
+							FunctioningTarget:HitEffect(true) -- add hit effect
+							SkillCache:PlayAnimation("BlockHitAnimation") -- play block hit animation for target
+						end
+						NoError = true -- this makes the srcipt not call the callback
+					end
+				end
+
+				HitWhitelist[Target] = true -- add the target to cooldown so he wont be spammed hit again
+				if not NoError then -- if there are no errors it should be reverted but ok you get the idea
+					Callback(Target, HitWhitelist, FunctioningTarget) -- call the function back
+				end
+			end
+		end
+
+	end
 
 end
 
-return Skill -- return the module table so it can be used
+return Functions -- return the module
